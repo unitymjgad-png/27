@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>類似度計 — コサイン類似度メーター</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #12151a;
+    --panel: #1b2027;
+    --panel-2: #20262e;
+    --line: #2c333d;
+    --text: #e7e5df;
+    --muted: #8b939c;
+    --accent: #5fbdb0;      /* measurement teal */
+    --accent-2: #e8735c;    /* needle warm */
+    --accent-dim: #3a4750;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    min-height: 100vh;
+    padding: 40px 20px 60px;
+  }
+  .wrap{ max-width: 980px; margin: 0 auto; }
+
+  header{ margin-bottom: 32px; }
+  .eyebrow{
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  h1{
+    font-size: 26px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    letter-spacing: 0.01em;
+  }
+  .sub{ color: var(--muted); font-size: 13.5px; line-height: 1.7; max-width: 620px; }
+
+  .gauge-section{
+    display:flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 28px 20px 20px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .gauge-section::before{
+    content:"";
+    position:absolute; top:0; left:0; right:0; height:2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+  svg#gauge{ width: 100%; max-width: 420px; height: auto; }
+  .gauge-value{
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 46px;
+    font-weight: 600;
+    fill: var(--text);
+  }
+  .gauge-label{
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    fill: var(--muted);
+  }
+  .readout{
+    display:flex; gap: 28px; margin-top: 6px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .readout b{ color: var(--text); font-weight: 500; }
+
+  .grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 720px){ .grid{ grid-template-columns: 1fr; } }
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-head{
+    display:flex; justify-content: space-between; align-items:center;
+    margin-bottom: 10px;
+  }
+  .panel-tag{
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+  }
+  .panel-tag.a{ color: var(--accent); }
+  .panel-tag.b{ color: var(--accent-2); }
+  .char-count{
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  textarea{
+    width: 100%;
+    min-height: 160px;
+    resize: vertical;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--text);
+    font-family: "Noto Sans JP", sans-serif;
+    font-size: 14.5px;
+    line-height: 1.7;
+    padding: 12px;
+    outline: none;
+    transition: border-color .15s ease;
+  }
+  textarea:focus{ border-color: var(--accent); }
+  textarea::placeholder{ color: #5a636c; }
+
+  .controls{
+    display:flex; align-items:center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+  }
+  .method{
+    display:flex; gap: 6px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+  }
+  .method button{
+    background: var(--panel-2);
+    color: var(--muted);
+    border: 1px solid var(--line);
+    padding: 7px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+  }
+  .method button.active{
+    background: var(--accent-dim);
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  button.compute{
+    background: var(--accent);
+    color: #0e1216;
+    border: none;
+    font-weight: 700;
+    font-size: 13.5px;
+    padding: 10px 22px;
+    border-radius: 3px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: filter .15s ease, transform .1s ease;
+  }
+  button.compute:hover{ filter: brightness(1.08); }
+  button.compute:active{ transform: scale(0.98); }
+  .method-note{
+    font-size: 11.5px; color: var(--muted); font-family: "IBM Plex Mono", monospace;
+    width: 100%;
+    margin-top: 2px;
+  }
+
+  .terms-panel{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 16px;
+  }
+  .terms-panel h2{
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 500;
+    margin: 0 0 12px;
+    text-transform: uppercase;
+  }
+  .chips{ display:flex; flex-wrap: wrap; gap: 6px; }
+  .chip{
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 4px 9px;
+    border-radius: 3px;
+  }
+  .chip .n{ color: var(--accent); margin-left: 5px; }
+  .empty{ color: var(--muted); font-size: 12.5px; font-family: "IBM Plex Mono", monospace; }
+
+  footer{
+    text-align:center; margin-top: 30px;
+    color: var(--muted); font-size: 11px;
+    font-family: "IBM Plex Mono", monospace;
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Text Similarity Instrument</div>
+    <h1>コサイン類似度メーター</h1>
+    <p class="sub">2つの文章をベクトル化し、コサイン類似度（0〜100%）を計測します。日本語は分かち書きなしでも比較できるよう、文字bi-gram方式を既定にしています。</p>
+  </header>
+
+  <section class="gauge-section">
+    <svg id="gauge" viewBox="0 0 420 250" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="readout">
+      <div>共通ベクトル次元数: <b id="commonDims">–</b></div>
+      <div>総次元数: <b id="totalDims">–</b></div>
+      <div>方式: <b id="methodLabel">文字bi-gram</b></div>
+    </div>
+  </section>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-tag a">TEXT A</span>
+        <span class="char-count" id="countA">0 文字</span>
+      </div>
+      <textarea id="textA" placeholder="1つ目の文章を入力してください…">吾輩は猫である。名前はまだ無い。</textarea>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-tag b">TEXT B</span>
+        <span class="char-count" id="countB">0 文字</span>
+      </div>
+      <textarea id="textB" placeholder="2つ目の文章を入力してください…">吾輩は犬である。名前はまだ無い。</textarea>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="method">
+      <button class="active" data-mode="bigram">文字bi-gram（日本語向け）</button>
+      <button data-mode="word">単語（スペース区切り）</button>
+    </div>
+    <button class="compute" id="computeBtn">類似度を計測する</button>
+    <div class="method-note" id="methodNote">文字bi-gramは、文章を2文字ずつ重ねて分割しベクトル化します。分かち書き不要で日本語に強い方式です。</div>
+  </div>
+
+  <div class="terms-panel">
+    <h2>共通する要素（上位）</h2>
+    <div class="chips" id="commonChips"><span class="empty">「計測する」を押すと表示されます</span></div>
+  </div>
+
+  <footer>COSINE SIMILARITY = (A・B) / (|A| × |B|)</footer>
+</div>
+
+<script>
+const textA = document.getElementById('textA');
+const textB = document.getElementById('textB');
+const countA = document.getElementById('countA');
+const countB = document.getElementById('countB');
+const computeBtn = document.getElementById('computeBtn');
+const gaugeSvg = document.getElementById('gauge');
+const commonDimsEl = document.getElementById('commonDims');
+const totalDimsEl = document.getElementById('totalDims');
+const methodLabelEl = document.getElementById('methodLabel');
+const commonChips = document.getElementById('commonChips');
+const methodNote = document.getElementById('methodNote');
+const methodButtons = document.querySelectorAll('.method button');
+
+let mode = 'bigram';
+const notes = {
+  bigram: '文字bi-gramは、文章を2文字ずつ重ねて分割しベクトル化します。分かち書き不要で日本語に強い方式です。',
+  word: '単語方式は、スペースで区切って単語ごとにベクトル化します。英語など分かち書きされた文章に向いています。'
+};
+
+methodButtons.forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    methodButtons.forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    mode = btn.dataset.mode;
+    methodNote.textContent = notes[mode];
+    methodLabelEl.textContent = mode === 'bigram' ? '文字bi-gram' : '単語';
+  });
+});
+
+function updateCounts(){
+  countA.textContent = textA.value.length + ' 文字';
+  countB.textContent = textB.value.length + ' 文字';
+}
+textA.addEventListener('input', updateCounts);
+textB.addEventListener('input', updateCounts);
+updateCounts();
+
+function tokenizeBigram(str){
+  const s = str.replace(/\s+/g, '');
+  if(s.length < 2) return s.length === 1 ? [s] : [];
+  const grams = [];
+  for(let i=0; i<s.length-1; i++){
+    grams.push(s.slice(i, i+2));
+  }
+  return grams;
+}
+
+function tokenizeWord(str){
+  return str
+    .toLowerCase()
+    .split(/\s+/)
+    .map(w => w.replace(/[.,!?;:"'()\[\]{}。、！？「」『』]/g, ''))
+    .filter(w => w.length > 0);
+}
+
+function toFreqMap(tokens){
+  const map = new Map();
+  for(const t of tokens){
+    map.set(t, (map.get(t) || 0) + 1);
+  }
+  return map;
+}
+
+function cosineSimilarity(mapA, mapB){
+  const allKeys = new Set([...mapA.keys(), ...mapB.keys()]);
+  let dot = 0, normA = 0, normB = 0, common = 0;
+  const commonList = [];
+  for(const k of allKeys){
+    const a = mapA.get(k) || 0;
+    const b = mapB.get(k) || 0;
+    dot += a * b;
+    normA += a * a;
+    normB += b * b;
+    if(a > 0 && b > 0){
+      common++;
+      commonList.push([k, Math.min(a,b)]);
+    }
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  const sim = denom === 0 ? 0 : dot / denom;
+  commonList.sort((x,y)=> y[1]-x[1]);
+  return { sim, totalDims: allKeys.size, commonDims: common, commonList };
+}
+
+function drawGauge(percent){
+  const cx = 210, cy = 210, r = 160;
+  const startAngle = 180, endAngle = 0; // semicircle, left to right
+  const angle = 180 - (percent/100) * 180; // needle angle in degrees, 180=left(0%), 0=right(100%)
+
+  function polar(cx, cy, r, angDeg){
+    const rad = (angDeg * Math.PI) / 180;
+    return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
+  }
+
+  const arcSegments = 60;
+  let ticks = '';
+  for(let i=0;i<=arcSegments;i++){
+    const a = 180 - (i/arcSegments)*180;
+    const isMajor = i % 10 === 0;
+    const p1 = polar(cx, cy, r, a);
+    const p2 = polar(cx, cy, r - (isMajor ? 14 : 7), a);
+    const filled = (i/arcSegments)*100 <= percent;
+    ticks += `<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="${filled ? 'var(--accent)' : '#3a4249'}" stroke-width="${isMajor ? 2.5 : 1.2}" />`;
+  }
+
+  const trackStart = polar(cx, cy, r, 180);
+  const trackEnd = polar(cx, cy, r, 0);
+  const arcPath = `M ${trackStart.x.toFixed(1)} ${trackStart.y.toFixed(1)} A ${r} ${r} 0 0 1 ${trackEnd.x.toFixed(1)} ${trackEnd.y.toFixed(1)}`;
+
+  const progAngleEnd = polar(cx, cy, r, angle);
+  const largeArc = (180 - angle) > 180 ? 1 : 0;
+  const progPath = `M ${trackStart.x.toFixed(1)} ${trackStart.y.toFixed(1)} A ${r} ${r} 0 ${largeArc} 1 ${progAngleEnd.x.toFixed(1)} ${progAngleEnd.y.toFixed(1)}`;
+
+  const needleLen = r - 26;
+  const needleTip = polar(cx, cy, needleLen, angle);
+  const needleBaseL = polar(cx, cy, 10, angle+90);
+  const needleBaseR = polar(cx, cy, 10, angle-90);
+
+  const labelLow = polar(cx, cy, r+22, 180);
+  const labelMid = polar(cx, cy, r+22, 90);
+  const labelHigh = polar(cx, cy, r+22, 0);
+
+  gaugeSvg.innerHTML = `
+    <path d="${arcPath}" fill="none" stroke="#2c333d" stroke-width="14" stroke-linecap="round"/>
+    <path d="${progPath}" fill="none" stroke="var(--accent-2)" stroke-width="14" stroke-linecap="round" opacity="0.9"/>
+    ${ticks}
+    <polygon points="${needleTip.x.toFixed(1)},${needleTip.y.toFixed(1)} ${needleBaseL.x.toFixed(1)},${needleBaseL.y.toFixed(1)} ${needleBaseR.x.toFixed(1)},${needleBaseR.y.toFixed(1)}" fill="var(--accent-2)"/>
+    <circle cx="${cx}" cy="${cy}" r="9" fill="#e7e5df"/>
+    <circle cx="${cx}" cy="${cy}" r="4" fill="var(--bg)"/>
+    <text x="${labelLow.x.toFixed(1)}" y="${labelLow.y.toFixed(1)}" text-anchor="middle" class="gauge-label" font-family="IBM Plex Mono, monospace">0%</text>
+    <text x="${labelMid.x.toFixed(1)}" y="${(labelMid.y-4).toFixed(1)}" text-anchor="middle" class="gauge-label" font-family="IBM Plex Mono, monospace">50%</text>
+    <text x="${labelHigh.x.toFixed(1)}" y="${labelHigh.y.toFixed(1)}" text-anchor="middle" class="gauge-label" font-family="IBM Plex Mono, monospace">100%</text>
+    <text x="${cx}" y="${cy - 55}" text-anchor="middle" class="gauge-value" font-family="IBM Plex Mono, monospace">${percent.toFixed(1)}%</text>
+  `;
+}
+
+// initial empty gauge
+drawGauge(0);
+
+function compute(){
+  const rawA = textA.value;
+  const rawB = textB.value;
+  const tokensA = mode === 'bigram' ? tokenizeBigram(rawA) : tokenizeWord(rawA);
+  const tokensB = mode === 'bigram' ? tokenizeBigram(rawB) : tokenizeWord(rawB);
+  const mapA = toFreqMap(tokensA);
+  const mapB = toFreqMap(tokensB);
+  const { sim, totalDims, commonDims, commonList } = cosineSimilarity(mapA, mapB);
+
+  const percent = Math.max(0, Math.min(100, sim * 100));
+  drawGauge(percent);
+  commonDimsEl.textContent = commonDims;
+  totalDimsEl.textContent = totalDims;
+
+  if(commonList.length === 0){
+    commonChips.innerHTML = '<span class="empty">共通する要素はありません</span>';
+  } else {
+    commonChips.innerHTML = commonList.slice(0, 24).map(([k, n]) =>
+      `<span class="chip">${escapeHtml(k)}<span class="n">×${n}</span></span>`
+    ).join('');
+  }
+}
+
+function escapeHtml(str){
+  return str.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+computeBtn.addEventListener('click', compute);
+
+// compute once on load with default sample text
+compute();
+</script>
+</body>
+</html>
